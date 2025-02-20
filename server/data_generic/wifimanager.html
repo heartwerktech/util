@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Wi-Fi Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+  <div class="topnav">
+    <h1>Enter local Wifi credentials:</h1>
+  </div>
+  <div class="content">
+    <div class="card-grid">
+      <div class="card">
+        <form action="/" method="POST">
+          <p>
+            <style>
+              .flex-container {
+                display: flex;
+                flex-direction: column;
+              }
+            
+              .flex-row {
+                display: flex;
+                align-items: center;
+              }
+            
+              .flex-row label {
+                width: 20%; /* Ensure labels have the same width for alignment */
+                margin-right: 5px; /* Space between label and input */
+                text-align: right;
+              }
+            
+            </style>
+            <div class="flex-container">
+              <div class="flex-row">
+                <label for="ssid">Name</label>
+                <input type="text" id="ssid" name="ssid">
+              </div>
+              <div class="flex-row">
+                <label for="pass">Password</label>
+                <input type="text" id="pass" name="pass">
+              </div>
+            </div>
+            <input type="submit" value="Set!">
+            
+            <!--
+            <label for="ip">IP Address</label>
+            <input type="text" id ="ip" name="ip" value="192.168.1.200"><br>
+            <label for="gateway">Gateway Address</label>
+            <input type="text" id ="gateway" name="gateway" value="192.168.1.1"><br>
+             -->
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
