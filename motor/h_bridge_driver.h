@@ -102,7 +102,7 @@ public:
 
     void setSpeed(float percentage)
     {
-        setSpeed(percentage);
+        set(percentage);
     }
 
     void set(float percentage)
