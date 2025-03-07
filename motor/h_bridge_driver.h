@@ -41,18 +41,16 @@
 
 #define ESP32C6 1 // TODO move this somewhere else
 
-class H_Bridge_Driver : public MotorDriverBase
+class H_Bridge_Driver
 {
 public:
-    H_Bridge_Driver(uint8_t pin1, uint8_t pin2) : MotorDriverBase(),
-        _pwm1(pin1), _pwm2(pin2)
+    H_Bridge_Driver(uint8_t pin1, uint8_t pin2) : _pwm1(pin1), _pwm2(pin2)
     {
     }
 
     void setup()
     {
-        
-    }
+        }
 
     void setFilterValue(float value)
     {
