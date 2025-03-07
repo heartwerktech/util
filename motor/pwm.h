@@ -4,6 +4,7 @@
 #include "../util.h"
 
 #define USE_ESP32_LEDC 1
+// not sure if works without ledc anymore
 
 // Single definition of PWM constants
 #define PWM_FREQUENCY 20000 // Updated to match h_bridge_driver.h value
@@ -33,8 +34,8 @@ public:
         ledcAttach(_pin, PWM_FREQUENCY, PWM_RANGE_BITS);
 #else
         // TODO why does this not work anymore ?
-        // analogWriteFrequency(PWM_FREQUENCY);
-        // analogWriteRange(PWM_RANGE);
+        analogWriteFrequency(_pin, PWM_FREQUENCY);
+        analogWriteResolution(_pin, PWM_RANGE_BITS);
 #endif
 
         set(0);
