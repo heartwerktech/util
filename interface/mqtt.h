@@ -196,7 +196,8 @@ void MQTT::sendLightBrightness(String component_name, uint8_t brightness)
 
 void MQTT::sendLight(String component_name, int value)
 {
-    sendLightBrightness(component_name, util::mapConstrainf(value, 0, 100, 0, 255));
+    if (_isActive)
+        sendLightBrightness(component_name, util::mapConstrainf(value, 0, 100, 0, 255));
 }
 
 bool MQTT::isRechableAndActive()
