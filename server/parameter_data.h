@@ -24,6 +24,9 @@
 // https://github.com/mo-thunderz/Esp32WifiPart4
 // ---------------------------------------------------------------------------------------
 
+#define CREATE_PARAMETER(name, defaultValue) \
+    Parameter name{this, #name, int(defaultValue)};
+    
 // ==============================
 class ParameterData
 {
