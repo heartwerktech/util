@@ -207,6 +207,7 @@ void MQTT::sendLight(String component_name, int value)
 
 bool MQTT::isRechableAndActive()
 {
+    printf("Trying to reach MQTT server...\n");
     WiFiClient client;
     for (int i = 0; i < 3; ++i)
     {
