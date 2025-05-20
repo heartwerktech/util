@@ -35,7 +35,7 @@
 #include <Arduino.h>
 #include "motor_driver_base.h"
 #include <elapsedMillis.h>
-#include "pwm.h"
+#include "../pwm.h"
 
 #include "../util.h"
 

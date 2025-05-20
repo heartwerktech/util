@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-#include "../util.h"
+#include "util.h"
 
 #define USE_ESP32_LEDC 1
 // not sure if works without ledc anymore
