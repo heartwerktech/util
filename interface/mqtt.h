@@ -24,7 +24,12 @@
  * }
  */
 
+#if ESP32
 #include <WiFi.h>
+#else
+#include <ESP8266WiFi.h>
+#endif
+
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <functional>

@@ -3,7 +3,7 @@
 
 #include "util.h"
 
-#define USE_ESP32_LEDC 1
+#define USE_ESP32_LEDC 0
 // not sure if works without ledc anymore
 
 // Single definition of PWM constants
@@ -34,8 +34,13 @@ public:
         ledcAttach(_pin, PWM_FREQUENCY, PWM_RANGE_BITS);
 #else
         // TODO why does this not work anymore ?
+        #if ESP32
         analogWriteFrequency(_pin, PWM_FREQUENCY);
         analogWriteResolution(_pin, PWM_RANGE_BITS);
+        #else
+        analogWriteFreq(PWM_FREQUENCY);
+        analogWriteResolution(PWM_RANGE_BITS);
+        #endif
 #endif
 
         set(0);

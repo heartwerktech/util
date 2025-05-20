@@ -2,7 +2,11 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+
+#include "config.h"
+#if ENABLE_SERVER
 #include "server/spiffs_helper.h"
+#endif
 #include <vector>
 
 #define PARAMETER_FILE_NAME "/parameter.json"
@@ -24,30 +28,27 @@
 // https://github.com/mo-thunderz/Esp32WifiPart4
 // ---------------------------------------------------------------------------------------
 
-#define CREATE_PARAMETER(name, defaultValue) \
-    Parameter name{this, #name, int(defaultValue)};
-    
+#define CREATE_PARAMETER(name, defaultValue) Parameter name{this, #name, int(defaultValue)};
+
 // ==============================
 class ParameterData
 {
 public:
     struct Parameter
     {
-        String name;
-        float value;
-        ParameterData *_parent;
+        String         name;
+        float          value;
+        ParameterData* _parent;
 
-        Parameter(
-            ParameterData *parent,
-            const String &name,
-            float default_value) : _parent(parent),
-                                 name(name),
-                                 value(default_value)
+        Parameter(ParameterData* parent, const String& name, float default_value)
+            : _parent(parent)
+            , name(name)
+            , value(default_value)
         {
             _parent->register_parameter(this);
         }
 
-        Parameter &operator=(float v)
+        Parameter& operator=(float v)
         {
             value = v;
             _parent->mark_parameter_changed_from_code(this);
@@ -62,13 +63,15 @@ public:
     };
 
     // TODO really define this twice ?!
-    using ParameterList = std::vector<ParameterData::Parameter *>;
+    using ParameterList = std::vector<ParameterData::Parameter*>;
 
     ParameterList parameters;
-    void register_parameter(Parameter *param) { parameters.push_back(param); }
+    void          register_parameter(Parameter* param) { parameters.push_back(param); }
 
     bool save() const
     {
+#if ENABLE_SERVER
+
 #if DEBUG_DATA
         Serial.println("ParameterData::save() !!! ");
 #endif
@@ -97,7 +100,8 @@ public:
 
     bool load()
     {
-        initFS();
+#if ENABLE_SERVER
+
 #if DEBUG_DATA
         Serial.println("ParameterData::load() !!! ");
 #endif
@@ -121,7 +125,7 @@ public:
         parameterFile.close();
 
         DynamicJsonDocument doc(1024);
-        auto error = deserializeJson(doc, buf.get());
+        auto                error = deserializeJson(doc, buf.get());
         if (error)
         {
             Serial.println("Failed to parse file");
@@ -137,13 +141,12 @@ public:
             Serial.printf("%s: %d\n", param->name.c_str(), param->value);
 #endif
 
+#endif
+#endif
         return true;
     }
 
-    void didUpdate()
-    {
-        _wasUpdated = true;
-    }
+    void didUpdate() { _wasUpdated = true; }
 
     bool wasUpdated()
     {
@@ -156,10 +159,10 @@ public:
         return false;
     }
 
-    bool parseAll(uint8_t *payload)
+    bool parseAll(uint8_t* payload)
     {
         StaticJsonDocument<200> doc;
-        DeserializationError error = deserializeJson(doc, payload);
+        DeserializationError    error = deserializeJson(doc, payload);
         if (error)
         {
             Serial.print(F("deserializeJson() failed: "));
@@ -167,8 +170,8 @@ public:
             return false;
         }
 
-        const String name = static_cast<const char *>(doc["name"]);
-        const int value = doc["value"];
+        const String name  = static_cast<const char*>(doc["name"]);
+        const int    value = doc["value"];
 
         for (auto param : parameters)
         {
@@ -177,7 +180,7 @@ public:
                 if (param->value != value)
                 {
                     param->value = value;
-                    _wasUpdated = true;
+                    _wasUpdated  = true;
                     mark_parameter_changed_from_server(param);
                 }
             }
@@ -190,10 +193,13 @@ private:
 
 public:
     ParameterList _parameters_changed_from_server;
-    void mark_parameter_changed_from_server(Parameter *param)
+    void          mark_parameter_changed_from_server(Parameter* param)
     {
-        // printf("mark_parameter_changed_from_server: %s = %d \n", param->name.c_str(), param->value);
-        if (std::find(_parameters_changed_from_server.begin(), _parameters_changed_from_server.end(), param) == _parameters_changed_from_server.end())
+        // printf("mark_parameter_changed_from_server: %s = %d \n", param->name.c_str(),
+        // param->value);
+        if (std::find(_parameters_changed_from_server.begin(),
+                      _parameters_changed_from_server.end(),
+                      param) == _parameters_changed_from_server.end())
             _parameters_changed_from_server.push_back(param);
     }
 
@@ -206,10 +212,13 @@ public:
 
 public:
     ParameterList _parameters_changed_from_code;
-    void mark_parameter_changed_from_code(Parameter *param)
+    void          mark_parameter_changed_from_code(Parameter* param)
     {
-        // printf("mark_parameter_changed_from_code: %s = %d \n", param->name.c_str(), param->value);
-        if (std::find(_parameters_changed_from_code.begin(), _parameters_changed_from_code.end(), param) == _parameters_changed_from_code.end())
+        // printf("mark_parameter_changed_from_code: %s = %d \n", param->name.c_str(),
+        // param->value);
+        if (std::find(_parameters_changed_from_code.begin(),
+                      _parameters_changed_from_code.end(),
+                      param) == _parameters_changed_from_code.end())
             _parameters_changed_from_code.push_back(param);
     }
 
@@ -221,4 +230,4 @@ public:
     }
 };
 
-using ParameterList = std::vector<ParameterData::Parameter *>;
+using ParameterList = std::vector<ParameterData::Parameter*>;
