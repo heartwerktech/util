@@ -105,6 +105,7 @@ private:
 
     void reconnect();
     void publishDiscoveryMessage(Component component);
+    void publishDiscoveryMessageDevice();
     void handleCallback(char* topic, byte* payload, unsigned int length);
 
     LightChangeCallback _lightChangeCallback;
@@ -127,7 +128,7 @@ private:
     }
     String getBaseFromComponent(Component component)
     {
-        return _device_name + "/" + component.type + "/" + component.name;
+        return _device_name + "/" + component.type + "/" DEVICE_NAME + "/" + component.name;
     }
 
     void publishState(const String& topic, const DynamicJsonDocument& stateDoc);
@@ -261,8 +262,12 @@ void MQTT::publishDiscoveryMessage(Component component)
     if (!_isActive)
         return;
 
+    // TODO: the node_id is an extra field to make sure homeassistant properly creates the device
+    // and can parse correctly. before this, a new device with same component.name (==object_id)
+    // would "use" the ones from before.
+    String node_id = DEVICE_NAME;
     String discovery_topic =
-        _discovery_prefix + "/" + component.type + "/" + component.name + "/config";
+        _discovery_prefix + "/" + component.type + "/" + node_id + "/" + component.name + "/config";
     String state_topic = getStateTopicFromComponents(component);
 
     DynamicJsonDocument doc(1024);
@@ -277,7 +282,7 @@ void MQTT::publishDiscoveryMessage(Component component)
 
     String name      = component.name;
     doc["name"]      = name;
-    doc["unique_id"] = name + "_" + WiFi.macAddress();
+    doc["unique_id"] = name + "_" + _device_id;
     if (component.type == "light")
     {
         doc["~"]          = getBaseFromComponent(component);
@@ -303,6 +308,93 @@ void MQTT::publishDiscoveryMessage(Component component)
         printf("Failed to publish config\n");
 }
 
+#if 0
+#define MAX_SIZE 1024*32
+// could be theoretically that this is nicer 
+void MQTT::publishDiscoveryMessageDevice()
+{
+    if (!_isActive)
+        return;
+
+    // Format: <discovery_prefix>/device/<object_id>/config
+    String discovery_topic = _discovery_prefix + "/device/" + _device_id + "/config";
+
+    // Try publishing components individually if the device approach fails
+    bool published = false;
+
+    // First, try with minimal device-based approach
+    {
+        DynamicJsonDocument doc(MAX_SIZE); // Even smaller size
+
+        // Absolute minimum device info
+        JsonObject dev = doc.createNestedObject("dev");
+        dev["ids"]     = _device_id;   // Only required field
+        dev["name"]    = _device_name; // Helpful for display
+
+        // Minimal origin info
+        JsonObject o = doc.createNestedObject("o");
+        o["name"]    = "esp"; // Super short
+        o["sw"]      = "1";   // Even shorter
+
+        // Minimal components info
+        JsonObject cmps = doc.createNestedObject("cmps");
+
+        // Add only the essential parameters for each component
+        for (const auto& component : _components)
+        {
+            JsonObject comp = cmps.createNestedObject(component.name);
+
+            // Only required field
+            comp["p"] = component.type;
+
+            // Shortest unique ID possible
+            comp["uniq_id"] = component.name + _device_id;
+
+            // Add only the most essential config
+            if (component.type == "light")
+            {
+
+                doc["~"]          = getBaseFromComponent(component);
+                doc["cmd_t"]      = "~/set";
+                doc["stat_t"]     = "~/state";
+                doc["schema"]     = "json";
+                doc["brightness"] = true;
+
+                // comp["bri"] = true;                                         // Enable brightness
+                // comp["stat_t"] = getStateTopicFromComponents(component);    // State topic
+                // comp["cmd_t"] = getCommandTopicFromComponents(component);   // Command topic
+            }
+        }
+
+        char   buffer[MAX_SIZE];
+        size_t n = serializeJson(doc, buffer);
+
+        printf("Discovery message size: %d bytes\n", n);
+
+        // Try to publish the device discovery
+        if (_client.publish(discovery_topic.c_str(), buffer, true))
+        {
+            printf("Device discovery config published (%d bytes)\n", n);
+            published = true;
+        }
+        else
+        {
+            printf("Failed to publish device config (%d bytes)\n", n);
+        }
+    }
+
+    // If device-based approach fails, fall back to individual component discovery
+    if (!published)
+    {
+        printf("Falling back to individual component discovery\n");
+        for (const auto& component : _components)
+        {
+            publishDiscoveryMessage(component);
+        }
+    }
+}
+#endif
+
 void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
 {
     String message;
@@ -321,25 +413,35 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
         return;
     }
 
-    String topicStr = String(topic); // format = deviceName/type/component/command - eg.: led-note-01/light/driver_ch1/set
-    
-    int firstSlash = topicStr.indexOf("/");
+    String topicStr = String(topic); // format = deviceName/type/component/command - eg.:
+                                     // led-note-01/light/driver_ch1/set
+
+    int firstSlash  = topicStr.indexOf("/");
     int secondSlash = topicStr.indexOf("/", firstSlash + 1);
-    int thirdSlash = topicStr.indexOf("/", secondSlash + 1);
-    
+    int thirdSlash  = topicStr.indexOf("/", secondSlash + 1);
+    int fourthSlash = topicStr.indexOf("/", thirdSlash + 1);
+
     String deviceName = topicStr.substring(0, firstSlash);
 
-    String type = topicStr.substring(firstSlash + 1, secondSlash);
-    String name = topicStr.substring(secondSlash + 1, thirdSlash);
-    String command = topicStr.substring(thirdSlash + 1);
+    String type      = topicStr.substring(firstSlash + 1, secondSlash);
+    String node_id   = topicStr.substring(secondSlash + 1, thirdSlash);
+    String object_id = topicStr.substring(thirdSlash + 1, fourthSlash);
+    String command   = topicStr.substring(fourthSlash + 1);
 
-    printf("deviceName=%s, type=%s, name=%s, command=%s\n", deviceName.c_str(), type.c_str(), name.c_str(), command.c_str());
-    
+    printf("deviceName=%s, type=%s, node_id=%s, object_id=%s, command=%s\n",
+           deviceName.c_str(),
+           type.c_str(),
+           node_id.c_str(),
+           object_id.c_str(),
+           command.c_str());
+
     if (deviceName != _device_name)
+        return;
+    if (node_id != DEVICE_NAME)
         return;
     if (type == "light")
         for (const auto& component : _components)
-            if (component.type == type && component.name == name)
+            if (component.type == type && component.name == object_id)
             {
                 if (command == "set")
                 {
@@ -358,8 +460,12 @@ void MQTT::reconnect()
         {
             printf("connected\n");
 
+#if 0
             for (const auto& component : _components)
                 publishDiscoveryMessage(component);
+
+                // publishDiscoveryMessageDevice();
+#endif
 
             _subscribed = false;
         }

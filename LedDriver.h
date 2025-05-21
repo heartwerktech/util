@@ -99,7 +99,7 @@ private:
 
     float _filterValue = 0.02f;
 
-    float _last_target = 0;
+    float _last_target = 1.0f;
 
     PWM_Driver _pwm;
 };
