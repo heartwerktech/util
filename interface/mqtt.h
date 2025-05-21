@@ -90,15 +90,15 @@ public:
 
     struct Component
     {
-        String type;
-        String name;
+        String platform;
+        String name; // != object_id as the object_id contains device_name to be unique in homeassistant
     };
 
     // Usage:
     // addLight("some_light");
     // addComponent("sensor", "position"); // theoretically , but not implemented
     void addLight(const String& name) { addComponent("light", name); }
-    void addComponent(const String& type, const String& name);
+    void addComponent(const String& platform, const String& name);
 
     std::vector<Component> _components;
 
@@ -128,9 +128,9 @@ private:
     String getBaseTopic(Component cmp)
     {
 #if USE_NODE_ID
-        return _device_name + "/" + cmp.type + "/" + DEVICE_NAME + "/" + cmp.name;
+        return _device_name + "/" + cmp.platform + "/" + DEVICE_NAME + "/" + cmp.name;
 #else
-        return _device_name + "/" + cmp.type + "/" + cmp.name;
+        return _device_name + "/" + cmp.platform + "/" + cmp.name;
 #endif
     }
 
@@ -142,9 +142,9 @@ private:
     void lightToggle(const String& component_name, bool state);
 };
 
-void MQTT::addComponent(const String& type, const String& name)
+void MQTT::addComponent(const String& platform, const String& name)
 {
-    _components.push_back({type, name});
+    _components.push_back({platform, name});
 }
 
 void MQTT::setup()
@@ -178,7 +178,7 @@ void MQTT::loop()
 
         for (const auto& component : _components)
         {
-            if (component.type == "light")
+            if (component.platform == "light")
             {
                 printf("Subscribing to %s\n", getCommandTopicFromComponents(component).c_str());
                 _client.subscribe(getCommandTopicFromComponents(component).c_str());
@@ -252,7 +252,7 @@ void MQTT::publishDiscoveryMessage(Component& component)
     // 1) Build object_id == unique_id by appending device_id to component.name
     String object_id = component.name + "_" + _device_name;
     // String object_id      = component.name + "_" + _device_id;
-    String discoveryTopic = _discovery_prefix + "/" + component.type + "/" + object_id + "/config";
+    String discoveryTopic = _discovery_prefix + "/" + component.platform + "/" + object_id + "/config";
 
     String state_topic = getStateTopicFromComponents(component);
 
@@ -272,7 +272,7 @@ void MQTT::publishDiscoveryMessage(Component& component)
     doc["name"]      = component.name; // friendly object_id
     doc["unique_id"] = object_id;      // MUST match the topic object_id
 
-    if (component.type == "light")
+    if (component.platform == "light")
     {
         doc["~"]          = getBaseTopic(component);
         doc["cmd_t"]      = "~/set";
@@ -336,13 +336,13 @@ void MQTT::publishDiscoveryMessageDevice()
             JsonObject comp = cmps.createNestedObject(component.name);
 
             // Only required field
-            comp["p"] = component.type;
+            comp["p"] = component.platform;
 
             // Shortest unique ID possible
             comp["uniq_id"] = component.name + _device_id;
 
             // Add only the most essential config
-            if (component.type == "light")
+            if (component.platform == "light")
             {
 
                 doc["~"]          = getBaseTopic(component);
@@ -403,7 +403,7 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
         return;
     }
 
-    String topicStr = String(topic); // format = deviceName/type/component.name/command - eg.:
+    String topicStr = String(topic); // format = deviceName/platform/component.name/command - eg.:
                                      // led-note-01/light/driver_ch1/set
 
 #if USE_NODE_ID
@@ -414,14 +414,14 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
 
     String deviceName = topicStr.substring(0, firstSlash);
 
-    String type      = topicStr.substring(firstSlash + 1, secondSlash);
+    String platform      = topicStr.substring(firstSlash + 1, secondSlash);
     String node_id   = topicStr.substring(secondSlash + 1, thirdSlash);
     String object_id = topicStr.substring(thirdSlash + 1, fourthSlash);
     String command   = topicStr.substring(fourthSlash + 1);
 
-    printf("deviceName=%s, type=%s, node_id=%s, object_id=%s, command=%s\n",
+    printf("deviceName=%s, platform=%s, node_id=%s, object_id=%s, command=%s\n",
            deviceName.c_str(),
-           type.c_str(),
+           platform.c_str(),
            node_id.c_str(),
            object_id.c_str(),
            command.c_str());
@@ -435,22 +435,22 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
 
     String deviceName = topicStr.substring(0, firstSlash);
 
-    String type = topicStr.substring(firstSlash + 1, secondSlash);
+    String platform = topicStr.substring(firstSlash + 1, secondSlash);
     String object_id = topicStr.substring(secondSlash + 1, thirdSlash);
     String command = topicStr.substring(thirdSlash + 1);
 
-    printf("deviceName=%s, type=%s, object_id=%s, command=%s\n",
+    printf("deviceName=%s, platform=%s, object_id=%s, command=%s\n",
            deviceName.c_str(),
-           type.c_str(),
+           platform.c_str(),
            object_id.c_str(),
            command.c_str());
 #endif
 
     if (deviceName != _device_name)
         return;
-    if (type == "light")
+    if (platform == "light")
         for (const auto& component : _components)
-            if (component.type == type && component.name == object_id)
+            if (component.platform == platform && component.name == object_id)
             {
                 if (command == "set")
                 {
