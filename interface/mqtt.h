@@ -25,6 +25,8 @@
  * }
  */
 
+// CURRENTLY ONLY TESTED with "light" components
+
 #if ESP32
 #include <WiFi.h>
 #else
@@ -36,6 +38,8 @@
 #include <functional>
 #include <vector>
 #include "config.h"
+
+#define USE_NODE_ID 0
 
 // should always be used like:
 //
@@ -73,7 +77,7 @@ public:
     bool isRechableAndActive(); // call this once in the beginning
 
     void loop();
-    void sendComponent(String component_name, String value);
+    void publishComponent(String component_name, const DynamicJsonDocument& stateDoc);
     void publishLight(String component_name, float percent);
 
     bool _isActive = false;
@@ -91,10 +95,12 @@ public:
     };
 
     // Usage:
-    // addComponent("sensor", "position");
-    // addComponent("switch", "relay");
-    // addComponent("light", "rotation_CW");
+    // addLight("some_light");
+    // addComponent("sensor", "position"); // theoretically , but not implemented
+    void addLight(const String& name) { addComponent("light", name); }
     void addComponent(const String& type, const String& name);
+
+    std::vector<Component> _components;
 
 private:
     PubSubClient _client;
@@ -104,8 +110,8 @@ private:
     bool _subscribed = false;
 
     void reconnect();
-    void publishDiscoveryMessage(Component component);
-    void publishDiscoveryMessageDevice();
+    void publishDiscoveryMessage(Component& component);
+    // void publishDiscoveryMessageDevice();
     void handleCallback(char* topic, byte* payload, unsigned int length);
 
     LightChangeCallback _lightChangeCallback;
@@ -116,22 +122,20 @@ private:
 
     String _device_id;
 
-    std::vector<Component> _components;
+    String getStateTopicFromComponents(Component cmp) { return getBaseTopic(cmp) + "/state"; }
+    String getCommandTopicFromComponents(Component cmp) { return getBaseTopic(cmp) + "/set"; }
 
-    String getStateTopicFromComponents(Component component)
+    String getBaseTopic(Component cmp)
     {
-        return getBaseFromComponent(component) + "/state";
-    }
-    String getCommandTopicFromComponents(Component component)
-    {
-        return getBaseFromComponent(component) + "/set";
-    }
-    String getBaseFromComponent(Component component)
-    {
-        return _device_name + "/" + component.type + "/" DEVICE_NAME + "/" + component.name;
+#if USE_NODE_ID
+        return _device_name + "/" + cmp.type + "/" + DEVICE_NAME + "/" + cmp.name;
+#else
+        return _device_name + "/" + cmp.type + "/" + cmp.name;
+#endif
     }
 
     void publishState(const String& topic, const DynamicJsonDocument& stateDoc);
+
     void processLightCommand(const String& component_name, const DynamicJsonDocument& doc);
 
     void lightChange(const String& component_name, float percent);
@@ -185,53 +189,36 @@ void MQTT::loop()
     }
 }
 
-void MQTT::sendComponent(String component_name, String value)
+void MQTT::publishComponent(String component_name, const DynamicJsonDocument& stateDoc)
 {
     for (const auto& component : _components)
-    {
         if (component.name == component_name)
         {
-            String topic = getStateTopicFromComponents(component);
-
-            DynamicJsonDocument stateDoc(200);
-            stateDoc["value"] = value;
-
-            publishState(topic, stateDoc);
+            publishState(getStateTopicFromComponents(component), stateDoc);
             return;
         }
-    }
-    printf("Error: Component not found\n");
+    printf("Error: Component not found: %s\n", component_name.c_str());
 }
 
 void MQTT::publishLight(String component_name, float percent)
 {
-
     if (!_isActive)
         return;
 
     uint8_t brightness = util::mapConstrainf(percent, 0.0f, 1.0f, 0, 255);
 
-    for (const auto& component : _components)
-    {
-        if (component.name == component_name && component.type == "light")
-        {
-            String topic = getStateTopicFromComponents(component);
+    DynamicJsonDocument stateDoc(200);
+    stateDoc["state"]      = brightness > 0 ? "ON" : "OFF";
+    stateDoc["brightness"] = brightness;
 
-            DynamicJsonDocument stateDoc(200);
-            stateDoc["state"]      = brightness > 0 ? "ON" : "OFF";
-            stateDoc["brightness"] = brightness;
+    printf("publishLight %s: %2.2f | homeassistant=%d | raw=%d\n",
+           component_name.c_str(),
+           percent,
+           int(percent * 100),
+           brightness);
 
-            printf("publishLight %s: %2.2f | homeassistant=%d | raw=%d\n",
-                   component_name.c_str(),
-                   percent,
-                   int(percent * 100),
-                   brightness);
-
-            publishState(topic, stateDoc);
-            return;
-        }
-    }
-    printf("Error: Component not found\n");
+    publishComponent(component_name, stateDoc);
+    return;
 }
 
 bool MQTT::isRechableAndActive()
@@ -257,35 +244,37 @@ void MQTT::setLightChangeCallback(LightChangeCallback callback) { _lightChangeCa
 
 void MQTT::setLightToggleCallback(LightToggleCallback callback) { _lightToggleCallback = callback; }
 
-void MQTT::publishDiscoveryMessage(Component component)
+void MQTT::publishDiscoveryMessage(Component& component)
 {
     if (!_isActive)
         return;
 
-    // TODO: the node_id is an extra field to make sure homeassistant properly creates the device
-    // and can parse correctly. before this, a new device with same component.name (==object_id)
-    // would "use" the ones from before.
-    String node_id = DEVICE_NAME;
-    String discovery_topic =
-        _discovery_prefix + "/" + component.type + "/" + node_id + "/" + component.name + "/config";
+    // 1) Build object_id == unique_id by appending device_id to component.name
+    String object_id = component.name + "_" + _device_name;
+    // String object_id      = component.name + "_" + _device_id;
+    String discoveryTopic = _discovery_prefix + "/" + component.type + "/" + object_id + "/config";
+
     String state_topic = getStateTopicFromComponents(component);
 
     DynamicJsonDocument doc(1024);
 
     JsonObject device = doc.createNestedObject("device");
     device["name"]    = _device_name;
-    device["ids"]     = _device_id;
-    device["mf"]      = "heartwerk.tech";
-    device["mdl"]     = _device_name;
-    device["sw"]      = "0.1";
-    device["hw"]      = "0.1";
+    // identifiers must be an array so HA knows it's the same device
+    JsonArray id_arr = device.createNestedArray("identifiers");
+    id_arr.add(_device_name);
+    device["mf"]  = "heartwerk.tech";
+    device["mdl"] = _device_name;
+    device["sw"]  = "0.1";
+    device["hw"]  = "0.1";
 
-    String name      = component.name;
-    doc["name"]      = name;
-    doc["unique_id"] = name + "_" + _device_id;
+    // 3) Top-level entity info
+    doc["name"]      = component.name; // friendly object_id
+    doc["unique_id"] = object_id;      // MUST match the topic object_id
+
     if (component.type == "light")
     {
-        doc["~"]          = getBaseFromComponent(component);
+        doc["~"]          = getBaseTopic(component);
         doc["cmd_t"]      = "~/set";
         doc["stat_t"]     = "~/state";
         doc["schema"]     = "json";
@@ -296,20 +285,22 @@ void MQTT::publishDiscoveryMessage(Component component)
         doc["state_topic"] = state_topic;
     }
 
-    doc["unit_of_measurement"] = "";
-    doc["value_template"]      = "{{ value_json.value }}";
+    // doc["unit_of_measurement"] = "";
+    doc["value_template"] = "{{ value_json.value }}";
 
-    char buffer[1024];
-    serializeJson(doc, buffer);
+    // 4) Serialize & publish (retained)
+    char   buffer[1024];
+    size_t len  = serializeJson(doc, buffer);
+    buffer[len] = '\0';
 
-    if (_client.publish(discovery_topic.c_str(), buffer, true))
-        printf("Config published for auto-discovery\n");
+    if (_client.publish(discoveryTopic.c_str(), buffer, true))
+        printf("publishDiscoveryMessage (topic=%s)\n", discoveryTopic.c_str());
     else
-        printf("Failed to publish config\n");
+        printf("publishDiscoveryMessage FAILED (topic=%s)\n", discoveryTopic.c_str());
 }
 
 #if 0
-#define MAX_SIZE 1024*32
+#define MAX_SIZE 1024 * 32
 // could be theoretically that this is nicer 
 void MQTT::publishDiscoveryMessageDevice()
 {
@@ -354,7 +345,7 @@ void MQTT::publishDiscoveryMessageDevice()
             if (component.type == "light")
             {
 
-                doc["~"]          = getBaseFromComponent(component);
+                doc["~"]          = getBaseTopic(component);
                 doc["cmd_t"]      = "~/set";
                 doc["stat_t"]     = "~/state";
                 doc["schema"]     = "json";
@@ -399,9 +390,8 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
 {
     String message;
     for (unsigned int i = 0; i < length; i++)
-    {
         message += (char)payload[i];
-    }
+
     printf("MQTT RX [%s]=%s\n", topic, message.c_str());
 
     DynamicJsonDocument  doc(200);
@@ -413,9 +403,10 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
         return;
     }
 
-    String topicStr = String(topic); // format = deviceName/type/component/command - eg.:
+    String topicStr = String(topic); // format = deviceName/type/component.name/command - eg.:
                                      // led-note-01/light/driver_ch1/set
 
+#if USE_NODE_ID
     int firstSlash  = topicStr.indexOf("/");
     int secondSlash = topicStr.indexOf("/", firstSlash + 1);
     int thirdSlash  = topicStr.indexOf("/", secondSlash + 1);
@@ -435,9 +426,27 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
            object_id.c_str(),
            command.c_str());
 
-    if (deviceName != _device_name)
-        return;
     if (node_id != DEVICE_NAME)
+        return;
+#else
+    int firstSlash = topicStr.indexOf("/");
+    int secondSlash = topicStr.indexOf("/", firstSlash + 1);
+    int thirdSlash = topicStr.indexOf("/", secondSlash + 1);
+
+    String deviceName = topicStr.substring(0, firstSlash);
+
+    String type = topicStr.substring(firstSlash + 1, secondSlash);
+    String object_id = topicStr.substring(secondSlash + 1, thirdSlash);
+    String command = topicStr.substring(thirdSlash + 1);
+
+    printf("deviceName=%s, type=%s, object_id=%s, command=%s\n",
+           deviceName.c_str(),
+           type.c_str(),
+           object_id.c_str(),
+           command.c_str());
+#endif
+
+    if (deviceName != _device_name)
         return;
     if (type == "light")
         for (const auto& component : _components)
@@ -460,11 +469,9 @@ void MQTT::reconnect()
         {
             printf("connected\n");
 
-#if 0
-            for (const auto& component : _components)
+#if 1
+            for (auto& component : _components)
                 publishDiscoveryMessage(component);
-
-                // publishDiscoveryMessageDevice();
 #endif
 
             _subscribed = false;
@@ -487,10 +494,10 @@ void MQTT::publishState(const String& topic, const DynamicJsonDocument& stateDoc
 
     if (_client.publish(topic.c_str(), stateJson.c_str()))
     {
-        // printf("State published successfully\n");
+        printf("publishState (topic=%s)\n", topic.c_str());
     }
     else
-        printf("Failed to publish state\n");
+        printf("publishState FAILED (topic=%s)\n", topic.c_str());
 }
 
 void MQTT::processLightCommand(const String& component_name, const DynamicJsonDocument& doc)
