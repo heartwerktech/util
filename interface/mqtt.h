@@ -111,7 +111,6 @@ private:
 
     void reconnect();
     void publishDiscoveryMessage(Component& component);
-    // void publishDiscoveryMessageDevice();
     void handleCallback(char* topic, byte* payload, unsigned int length);
 
     LightChangeCallback _lightChangeCallback;
@@ -298,93 +297,6 @@ void MQTT::publishDiscoveryMessage(Component& component)
     else
         printf("publishDiscoveryMessage FAILED (topic=%s)\n", discoveryTopic.c_str());
 }
-
-#if 0
-#define MAX_SIZE 1024 * 32
-// could be theoretically that this is nicer 
-void MQTT::publishDiscoveryMessageDevice()
-{
-    if (!_isActive)
-        return;
-
-    // Format: <discovery_prefix>/device/<object_id>/config
-    String discovery_topic = _discovery_prefix + "/device/" + _device_id + "/config";
-
-    // Try publishing components individually if the device approach fails
-    bool published = false;
-
-    // First, try with minimal device-based approach
-    {
-        DynamicJsonDocument doc(MAX_SIZE); // Even smaller size
-
-        // Absolute minimum device info
-        JsonObject dev = doc.createNestedObject("dev");
-        dev["ids"]     = _device_id;   // Only required field
-        dev["name"]    = _device_name; // Helpful for display
-
-        // Minimal origin info
-        JsonObject o = doc.createNestedObject("o");
-        o["name"]    = "esp"; // Super short
-        o["sw"]      = "1";   // Even shorter
-
-        // Minimal components info
-        JsonObject cmps = doc.createNestedObject("cmps");
-
-        // Add only the essential parameters for each component
-        for (const auto& component : _components)
-        {
-            JsonObject comp = cmps.createNestedObject(component.name);
-
-            // Only required field
-            comp["p"] = component.platform;
-
-            // Shortest unique ID possible
-            comp["uniq_id"] = component.name + _device_id;
-
-            // Add only the most essential config
-            if (component.platform == "light")
-            {
-
-                doc["~"]          = getBaseTopic(component);
-                doc["cmd_t"]      = "~/set";
-                doc["stat_t"]     = "~/state";
-                doc["schema"]     = "json";
-                doc["brightness"] = true;
-
-                // comp["bri"] = true;                                         // Enable brightness
-                // comp["stat_t"] = getStateTopicFromComponents(component);    // State topic
-                // comp["cmd_t"] = getCommandTopicFromComponents(component);   // Command topic
-            }
-        }
-
-        char   buffer[MAX_SIZE];
-        size_t n = serializeJson(doc, buffer);
-
-        printf("Discovery message size: %d bytes\n", n);
-
-        // Try to publish the device discovery
-        if (_client.publish(discovery_topic.c_str(), buffer, true))
-        {
-            printf("Device discovery config published (%d bytes)\n", n);
-            published = true;
-        }
-        else
-        {
-            printf("Failed to publish device config (%d bytes)\n", n);
-        }
-    }
-
-    // If device-based approach fails, fall back to individual component discovery
-    if (!published)
-    {
-        printf("Falling back to individual component discovery\n");
-        for (const auto& component : _components)
-        {
-            publishDiscoveryMessage(component);
-        }
-    }
-}
-#endif
 
 void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
 {
