@@ -66,6 +66,7 @@ public:
     {
         simpleFilterf(_current, _target, _filterValue);
 
+#if 0
         if (_since_set > 2000)
         {
             _since_set = 0;
@@ -76,6 +77,7 @@ public:
                     onSelfUpdate();
             }
         }
+#endif
 
         float correctedValue = applyGamma(_current);
         _pwm.set(correctedValue);
