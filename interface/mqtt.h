@@ -4,8 +4,9 @@
  * @file mqtt.h
  * @brief MQTT interface for ESP32
  *
- * This file contains the MQTT class which provides methods to setup, manage, and communicate with an MQTT server.
- * It includes functionality to send and receive messages, handle light component commands, and publish discovery messages.
+ * This file contains the MQTT class which provides methods to setup, manage, and communicate with
+ * an MQTT server. It includes functionality to send and receive messages, handle light component
+ * commands, and publish discovery messages.
  *
  * Usage:
  *
@@ -54,24 +55,34 @@
 class MQTT
 {
 public:
-    MQTT(const char *server, int port)
-        : _server(server), _port(port), _client(*(new WiFiClient())) {}
+    MQTT(const char* server, int port)
+        : _server(server)
+        , _port(port)
+        , _client(*(new WiFiClient()))
+    {
+    }
 
-    MQTT(const char *server, int port, Client &client)
-        : _server(server), _port(port), _client(client) {}
+    MQTT(const char* server, int port, Client& client)
+        : _server(server)
+        , _port(port)
+        , _client(client)
+    {
+    }
 
     void setup();
     bool isRechableAndActive(); // call this once in the beginning
 
     void loop();
     void sendComponent(String component_name, String value);
-    void sendLightBrightness(String component_name, uint8_t brightness);
-    void sendLight(String component_name, int value);
+    void publishLight(String component_name, float percent);
 
     bool _isActive = false;
 
-    using LightChangeCallback = std::function<void(const String &name, float percent)>;
+    using LightChangeCallback = std::function<void(const String& name, float percent)>;
     void setLightChangeCallback(LightChangeCallback callback);
+
+    using LightToggleCallback = std::function<void(const String& name, bool state)>;
+    void setLightToggleCallback(LightToggleCallback callback);
 
     struct Component
     {
@@ -83,38 +94,50 @@ public:
     // addComponent("sensor", "position");
     // addComponent("switch", "relay");
     // addComponent("light", "rotation_CW");
-    void addComponent(const String &type, const String &name);
+    void addComponent(const String& type, const String& name);
 
 private:
     PubSubClient _client;
-    const char *_server;
-    int _port;
+    const char*  _server;
+    int          _port;
 
     bool _subscribed = false;
 
     void reconnect();
     void publishDiscoveryMessage(Component component);
-    void handleCallback(char *topic, byte *payload, unsigned int length);
+    void handleCallback(char* topic, byte* payload, unsigned int length);
 
     LightChangeCallback _lightChangeCallback;
+    LightToggleCallback _lightToggleCallback;
 
     const String _discovery_prefix = "homeassistant";
-    const String _device_name = DEVICE_NAME;
+    const String _device_name      = DEVICE_NAME;
 
     String _device_id;
 
     std::vector<Component> _components;
 
-    String getStateTopicFromComponents(Component component) { return getBaseFromComponent(component) + "/state"; }
-    String getCommandTopicFromComponents(Component component) { return getBaseFromComponent(component) + "/set"; }
-    String getBaseFromComponent(Component component) { return _device_name + "/" + component.type + "/" + component.name; }
+    String getStateTopicFromComponents(Component component)
+    {
+        return getBaseFromComponent(component) + "/state";
+    }
+    String getCommandTopicFromComponents(Component component)
+    {
+        return getBaseFromComponent(component) + "/set";
+    }
+    String getBaseFromComponent(Component component)
+    {
+        return _device_name + "/" + component.type + "/" + component.name;
+    }
 
-    void publishState(const String &topic, const DynamicJsonDocument &stateDoc);
-    void processLightCommand(const String &component_name, const DynamicJsonDocument &doc);
-    void reactToLightChange(const String &component_name, uint8_t brightness);
+    void publishState(const String& topic, const DynamicJsonDocument& stateDoc);
+    void processLightCommand(const String& component_name, const DynamicJsonDocument& doc);
+
+    void lightChange(const String& component_name, float percent);
+    void lightToggle(const String& component_name, bool state);
 };
 
-void MQTT::addComponent(const String &type, const String &name)
+void MQTT::addComponent(const String& type, const String& name)
 {
     _components.push_back({type, name});
 }
@@ -123,8 +146,9 @@ void MQTT::setup()
 {
     _client.setBufferSize(1024);
     _client.setServer(_server, _port);
-    _client.setCallback([this](char *topic, byte *payload, unsigned int length)
-                        { this->handleCallback(topic, payload, length); });
+    _client.setCallback([this](char* topic, byte* payload, unsigned int length) {
+        this->handleCallback(topic, payload, length);
+    });
 
     String mac = WiFi.macAddress();
     mac.replace(":", "");
@@ -147,7 +171,7 @@ void MQTT::loop()
     {
         printf("Subscribing to topics\n");
 
-        for (const auto &component : _components)
+        for (const auto& component : _components)
         {
             if (component.type == "light")
             {
@@ -162,7 +186,7 @@ void MQTT::loop()
 
 void MQTT::sendComponent(String component_name, String value)
 {
-    for (const auto &component : _components)
+    for (const auto& component : _components)
     {
         if (component.name == component_name)
         {
@@ -178,31 +202,35 @@ void MQTT::sendComponent(String component_name, String value)
     printf("Error: Component not found\n");
 }
 
-void MQTT::sendLightBrightness(String component_name, uint8_t brightness)
+void MQTT::publishLight(String component_name, float percent)
 {
-    for (const auto &component : _components)
+
+    if (!_isActive)
+        return;
+
+    uint8_t brightness = util::mapConstrainf(percent, 0.0f, 1.0f, 0, 255);
+
+    for (const auto& component : _components)
     {
         if (component.name == component_name && component.type == "light")
         {
             String topic = getStateTopicFromComponents(component);
 
             DynamicJsonDocument stateDoc(200);
-            stateDoc["state"] = brightness > 0 ? "ON" : "OFF";
+            stateDoc["state"]      = brightness > 0 ? "ON" : "OFF";
             stateDoc["brightness"] = brightness;
 
-            printf("sendLight %s: %d\n", component_name.c_str(), brightness);
+            printf("publishLight %s: %2.2f | homeassistant=%d | raw=%d\n",
+                   component_name.c_str(),
+                   percent,
+                   int(percent * 100),
+                   brightness);
 
             publishState(topic, stateDoc);
             return;
         }
     }
     printf("Error: Component not found\n");
-}
-
-void MQTT::sendLight(String component_name, int value)
-{
-    if (_isActive)
-        sendLightBrightness(component_name, util::mapConstrainf(value, 0, 100, 0, 255));
 }
 
 bool MQTT::isRechableAndActive()
@@ -224,38 +252,38 @@ bool MQTT::isRechableAndActive()
     return _isActive;
 }
 
-void MQTT::setLightChangeCallback(LightChangeCallback callback)
-{
-    _lightChangeCallback = callback;
-}
+void MQTT::setLightChangeCallback(LightChangeCallback callback) { _lightChangeCallback = callback; }
+
+void MQTT::setLightToggleCallback(LightToggleCallback callback) { _lightToggleCallback = callback; }
 
 void MQTT::publishDiscoveryMessage(Component component)
 {
     if (!_isActive)
         return;
 
-    String discovery_topic = _discovery_prefix + "/" + component.type + "/" + component.name + "/config";
+    String discovery_topic =
+        _discovery_prefix + "/" + component.type + "/" + component.name + "/config";
     String state_topic = getStateTopicFromComponents(component);
 
     DynamicJsonDocument doc(1024);
 
     JsonObject device = doc.createNestedObject("device");
-    device["name"] = _device_name;
-    device["ids"] = _device_id;
-    device["mf"] = "heartwerk.tech";
-    device["mdl"] = _device_name;
-    device["sw"] = "0.1";
-    device["hw"] = "0.1";
+    device["name"]    = _device_name;
+    device["ids"]     = _device_id;
+    device["mf"]      = "heartwerk.tech";
+    device["mdl"]     = _device_name;
+    device["sw"]      = "0.1";
+    device["hw"]      = "0.1";
 
-    String name = component.name;
-    doc["name"] = name;
+    String name      = component.name;
+    doc["name"]      = name;
     doc["unique_id"] = name + "_" + WiFi.macAddress();
     if (component.type == "light")
     {
-        doc["~"] = getBaseFromComponent(component);
-        doc["cmd_t"] = "~/set";
-        doc["stat_t"] = "~/state";
-        doc["schema"] = "json";
+        doc["~"]          = getBaseFromComponent(component);
+        doc["cmd_t"]      = "~/set";
+        doc["stat_t"]     = "~/state";
+        doc["schema"]     = "json";
         doc["brightness"] = true;
     }
     else
@@ -264,7 +292,7 @@ void MQTT::publishDiscoveryMessage(Component component)
     }
 
     doc["unit_of_measurement"] = "";
-    doc["value_template"] = "{{ value_json.value }}";
+    doc["value_template"]      = "{{ value_json.value }}";
 
     char buffer[1024];
     serializeJson(doc, buffer);
@@ -275,16 +303,16 @@ void MQTT::publishDiscoveryMessage(Component component)
         printf("Failed to publish config\n");
 }
 
-void MQTT::handleCallback(char *topic, byte *payload, unsigned int length)
+void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
 {
     String message;
     for (unsigned int i = 0; i < length; i++)
     {
         message += (char)payload[i];
     }
-    printf("Message arrived [%s]: %s\n", topic, message.c_str());
+    printf("MQTT RX [%s]=%s\n", topic, message.c_str());
 
-    DynamicJsonDocument doc(200);
+    DynamicJsonDocument  doc(200);
     DeserializationError error = deserializeJson(doc, message);
 
     if (error)
@@ -293,17 +321,27 @@ void MQTT::handleCallback(char *topic, byte *payload, unsigned int length)
         return;
     }
 
-    String topicStr = String(topic);
+    String topicStr = String(topic); // format = deviceName/type/component/command - eg.: led-note-01/light/driver_ch1/set
+    
+    int firstSlash = topicStr.indexOf("/");
+    int secondSlash = topicStr.indexOf("/", firstSlash + 1);
+    int thirdSlash = topicStr.indexOf("/", secondSlash + 1);
+    
+    String deviceName = topicStr.substring(0, firstSlash);
 
-    if (topicStr.indexOf("/light/") != -1)
-        for (const auto &component : _components)
-            if (component.type == "light")
+    String type = topicStr.substring(firstSlash + 1, secondSlash);
+    String name = topicStr.substring(secondSlash + 1, thirdSlash);
+    String command = topicStr.substring(thirdSlash + 1);
+
+    printf("deviceName=%s, type=%s, name=%s, command=%s\n", deviceName.c_str(), type.c_str(), name.c_str(), command.c_str());
+    
+    if (deviceName != _device_name)
+        return;
+    if (type == "light")
+        for (const auto& component : _components)
+            if (component.type == type && component.name == name)
             {
-                String componentNameInTopic = topicStr.substring(topicStr.indexOf("/light/") + 7);
-                componentNameInTopic = componentNameInTopic.substring(0, componentNameInTopic.indexOf("/set"));
-
-                // printf("Comparing %s with %s\n", componentNameInTopic.c_str(), component.name.c_str());
-                if (componentNameInTopic == component.name)
+                if (command == "set")
                 {
                     processLightCommand(component.name, doc);
                     return;
@@ -320,7 +358,7 @@ void MQTT::reconnect()
         {
             printf("connected\n");
 
-            for (const auto &component : _components)
+            for (const auto& component : _components)
                 publishDiscoveryMessage(component);
 
             _subscribed = false;
@@ -333,7 +371,7 @@ void MQTT::reconnect()
     }
 }
 
-void MQTT::publishState(const String &topic, const DynamicJsonDocument &stateDoc)
+void MQTT::publishState(const String& topic, const DynamicJsonDocument& stateDoc)
 {
     if (!_isActive)
         return;
@@ -349,42 +387,44 @@ void MQTT::publishState(const String &topic, const DynamicJsonDocument &stateDoc
         printf("Failed to publish state\n");
 }
 
-void MQTT::processLightCommand(const String &component_name, const DynamicJsonDocument &doc)
+void MQTT::processLightCommand(const String& component_name, const DynamicJsonDocument& doc)
 {
     if (doc.containsKey("state"))
     {
         String state = doc["state"];
-        printf("State: %s\n", state.c_str());
+        printf("state: %s\n", state.c_str());
 
-        if (state == "OFF")
+        if (state == "ON")
         {
-            reactToLightChange(component_name, 0);
+            if (doc.containsKey("brightness"))
+                lightChange(component_name, float(doc["brightness"]) / 255.0f);
+            else
+                lightToggle(component_name, true);
+        }
+        else if (state == "OFF")
+        {
+            lightToggle(component_name, false);
         }
         else if (state != "ON")
             printf("Invalid state value\n");
     }
+    else if (doc.containsKey("brightness"))
+        lightChange(component_name, float(doc["brightness"]) / 255.0f);
     else
-        printf("State key not found in JSON\n");
-
-    if (doc.containsKey("brightness"))
-    {
-        uint8_t brightness = doc["brightness"];
-
-        printf("Brightness: %d\n", brightness);
-
-        reactToLightChange(component_name, brightness);
-    }
-    else
-        printf("Brightness key not found in JSON\n");
+        printf("state and brightness key not found in JSON\n");
 }
 
-void MQTT::reactToLightChange(const String &component_name, uint8_t brightness)
+void MQTT::lightChange(const String& component_name, float percent)
 {
-    // loopback to mqtt
-    sendLightBrightness(component_name, brightness);
+    if (percent <= (4.0f / 255.0f))
+        percent = 0;
 
-    // use elsewhere via callback
-    float percent = brightness / 255.0;
     if (_lightChangeCallback)
         _lightChangeCallback(component_name, percent);
+}
+
+void MQTT::lightToggle(const String& component_name, bool state)
+{
+    if (_lightToggleCallback)
+        _lightToggleCallback(component_name, state);
 }
