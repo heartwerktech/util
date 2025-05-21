@@ -37,7 +37,7 @@ public:
     void set(float percentage) // 0-1.0f
     {
         _since_set = 0;
-        printf("map %2.2f to %2.2f\n", percentage, applyGamma(percentage));
+        // printf("map %2.2f to %2.2f\n", percentage, applyGamma(percentage));
 
         _target = constrain(percentage, 0.0f, 1.0f);
     }

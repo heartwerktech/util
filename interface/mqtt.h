@@ -91,7 +91,8 @@ public:
     struct Component
     {
         String platform;
-        String name; // != object_id as the object_id contains device_name to be unique in homeassistant
+        String name; // != object_id as the object_id contains device_name to be unique in
+                     // homeassistant
     };
 
     // Usage:
@@ -143,6 +144,7 @@ private:
 
 void MQTT::addComponent(const String& platform, const String& name)
 {
+    printf("MQTT::addComponent( platform=%s, name=%s )\n", platform.c_str(), name.c_str());
     _components.push_back({platform, name});
 }
 
@@ -173,8 +175,6 @@ void MQTT::loop()
 
     if (_client.connected() && !_subscribed)
     {
-        printf("Subscribing to topics\n");
-
         for (const auto& component : _components)
         {
             if (component.platform == "light")
@@ -207,8 +207,9 @@ void MQTT::publishLight(String component_name, float percent)
     uint8_t brightness = util::mapConstrainf(percent, 0.0f, 1.0f, 0, 255);
 
     DynamicJsonDocument stateDoc(200);
-    stateDoc["state"]      = brightness > 0 ? "ON" : "OFF";
-    stateDoc["brightness"] = brightness;
+    stateDoc["state"] = brightness > 0 ? "ON" : "OFF";
+    if (brightness > 0)
+        stateDoc["brightness"] = brightness;
 
     printf("publishLight %s: %2.2f | homeassistant=%d | raw=%d\n",
            component_name.c_str(),
@@ -251,7 +252,8 @@ void MQTT::publishDiscoveryMessage(Component& component)
     // 1) Build object_id == unique_id by appending device_id to component.name
     String object_id = component.name + "_" + _device_name;
     // String object_id      = component.name + "_" + _device_id;
-    String discoveryTopic = _discovery_prefix + "/" + component.platform + "/" + object_id + "/config";
+    String discoveryTopic =
+        _discovery_prefix + "/" + component.platform + "/" + object_id + "/config";
 
     String state_topic = getStateTopicFromComponents(component);
 
@@ -316,7 +318,7 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
     }
 
     String topicStr = String(topic); // format = deviceName/platform/component.name/command - eg.:
-                                     // led-note-01/light/driver_ch1/set
+                                     // led-note-01/light/ch1/set
 
 #if USE_NODE_ID
     int firstSlash  = topicStr.indexOf("/");
@@ -326,7 +328,7 @@ void MQTT::handleCallback(char* topic, byte* payload, unsigned int length)
 
     String deviceName = topicStr.substring(0, firstSlash);
 
-    String platform      = topicStr.substring(firstSlash + 1, secondSlash);
+    String platform  = topicStr.substring(firstSlash + 1, secondSlash);
     String node_id   = topicStr.substring(secondSlash + 1, thirdSlash);
     String object_id = topicStr.substring(thirdSlash + 1, fourthSlash);
     String command   = topicStr.substring(fourthSlash + 1);
@@ -417,7 +419,7 @@ void MQTT::processLightCommand(const String& component_name, const DynamicJsonDo
     if (doc.containsKey("state"))
     {
         String state = doc["state"];
-        printf("state: %s\n", state.c_str());
+        // printf("state: %s\n", state.c_str());
 
         if (state == "ON")
         {
