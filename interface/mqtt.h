@@ -27,7 +27,7 @@
 
 // CURRENTLY ONLY TESTED with "light" components
 
-#if ESP32
+#ifdef ARDUINO_ARCH_ESP32
 #include <WiFi.h>
 #else
 #include <ESP8266WiFi.h>
