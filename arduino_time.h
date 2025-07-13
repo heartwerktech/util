@@ -10,17 +10,17 @@ using time_min = int32_t;
 namespace util
 {
 
-    time_ms now_ms()
+    inline time_ms now_ms()
     {
         return millis();
     }
 
-    time_ms since_ms(time_ms event_ms)
+    inline time_ms since_ms(time_ms event_ms)
     {
         return now_ms() - event_ms;
     }
 
-    float getRelative(time_ms timer, time_ms period)
+    inline float getRelative(time_ms timer, time_ms period)
     {
         if (period < timer)
         {
@@ -30,7 +30,7 @@ namespace util
         return constrain(float(timer) / float(period), 0, 1);
     }
 
-    float getRelative(lpsd_ms timer, time_ms period)
+    inline float getRelative(lpsd_ms timer, time_ms period)
     {
         return getRelative(static_cast<time_ms>(timer), period);
     }

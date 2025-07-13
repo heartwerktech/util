@@ -1,64 +1,90 @@
 #pragma once
 #include <Arduino.h>
-
+#include <memory>
+#include <vector>
 #include "util.h"
 
-// Single definition of PWM constants
-#define PWM_FREQUENCY 20000 // Updated to match h_bridge_driver.h value
-const int PWM_RANGE_BITS = 8;
-const int PWM_RANGE      = (1 << PWM_RANGE_BITS);
+namespace led {
 
-// works for esp32 and esp8266:
-class PWM_Driver
-{
+/**
+ * @brief PWM configuration structure for runtime configuration
+ */
+struct PWMConfig {
+    uint32_t frequency = 20000;  // Hz
+    uint8_t resolution_bits = 8; // 1-16 bits
+    uint8_t pin = 0;
+    
+    PWMConfig() = default;
+    PWMConfig(uint8_t pin, uint32_t freq = 20000, uint8_t res = 8) 
+        : frequency(freq), resolution_bits(res), pin(pin) {}
+};
+
+/**
+ * @brief Modern PWM driver with runtime configuration
+ */
+class PWMDriver {
 public:
-    PWM_Driver() {}
-
-    PWM_Driver(uint8_t pin) { setup(pin); }
-
-    void setup(uint8_t pin)
-    {
-        Serial.printf("setup PWM_Driver pin %d\n", pin);
-
-        _pin = pin;
-        pinMode(_pin, OUTPUT);
-
-#ifdef ARDUINO_ARCH_ESP32
-        // ESP32 doesn't have analogWriteFreq/analogWriteResolution in the same way
-        // Use ledc functions instead for ESP32
-        _channel = _getNextChannel();
-        ledcAttach(_pin, PWM_FREQUENCY, PWM_RANGE_BITS);
-#else
-        analogWriteFreq(PWM_FREQUENCY);
-        analogWriteResolution(PWM_RANGE_BITS);
-#endif
-
-        set(0);
-    }
-
-    // 0 to 1
-    void set(float percentage)
-    {
-        _current = percentage;
-
-        int pwm = util::mapConstrainf(fabs(_current), 0, 1, 0, float(PWM_RANGE - 1));
-#ifdef ARDUINO_ARCH_ESP32
-        ledcWrite(_pin, pwm);
-#else
-        analogWrite(_pin, pwm);
-#endif
-    }
-
-    float get() { return _current; }
+    explicit PWMDriver(const PWMConfig& config = {});
+    ~PWMDriver() = default;
+    
+    // Modern C++: disable copy, enable move
+    PWMDriver(const PWMDriver&) = delete;
+    PWMDriver& operator=(const PWMDriver&) = delete;
+    PWMDriver(PWMDriver&&) = default;
+    PWMDriver& operator=(PWMDriver&&) = default;
+    
+    /**
+     * @brief Initialize the PWM driver
+     * @param config PWM configuration
+     */
+    void setup(const PWMConfig& config);
+    
+    /**
+     * @brief Set PWM duty cycle (0.0 to 1.0)
+     * @param percentage Duty cycle as percentage
+     */
+    void set(float percentage);
+    
+    /**
+     * @brief Get current duty cycle
+     * @return Current duty cycle (0.0 to 1.0)
+     */
+    [[nodiscard]] float get() const { return current_duty_; }
+    
+    /**
+     * @brief Get current configuration
+     * @return Current PWM configuration
+     */
+    [[nodiscard]] const PWMConfig& getConfig() const { return config_; }
+    
+    /**
+     * @brief Update configuration at runtime
+     * @param new_config New PWM configuration
+     */
+    void updateConfig(const PWMConfig& new_config);
+    
+    /**
+     * @brief Check if driver is properly initialized
+     * @return true if initialized
+     */
+    [[nodiscard]] bool isInitialized() const { return initialized_; }
 
 private:
-    float   _current = 0;
-    uint8_t _pin;
-    uint8_t _channel = 0;
-
-    static uint8_t _getNextChannel()
-    {
-        static uint8_t nextChannel = 0;
-        return nextChannel++;
-    }
+    void initializeHardware();
+    void cleanupHardware();
+    
+    static uint8_t getNextChannel();
+    
+    PWMConfig config_;
+    float current_duty_ = 0.0f;
+    uint8_t channel_ = 0;
+    bool initialized_ = false;
+    
+    static uint8_t next_channel_;
+    static constexpr uint8_t MAX_CHANNELS = 16;
 };
+
+// Static member declaration
+static uint8_t next_channel_;
+
+} // namespace led

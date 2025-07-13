@@ -14,7 +14,7 @@ static T map(T value, float inMin, float inMax, float outMin, float outMax)
     return (value - inMin) / (inMax - inMin) * (outMax - outMin) + outMin;
 }
 
-float clipf(float value, float low, float high)
+inline float clipf(float value, float low, float high)
 {
     if (value < low)
         return low;
@@ -44,12 +44,12 @@ T clip(T value, T low, T high) {
 #endif
 
 
-float mapf(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
+inline float mapf(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
     return (value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow) + toLow;
 }
 
 
-float mapConstrainf(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
+inline float mapConstrainf(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
     return clipf(mapf(value, fromLow, fromHigh, toLow, toHigh), toLow, toHigh);
 }
 
@@ -105,7 +105,7 @@ float mapExpConstraintf(float value, float fromLow, float fromHigh, float toLow,
 */
 
 // NOT FULLY TESTED yet
-float mapLogf(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
+inline float mapLogf(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
     // Handle the edge case where the input range is zero
     if (fromLow == fromHigh) {
         return toLow; // Return the lower bound of the target range if the input range is invalid
@@ -126,11 +126,11 @@ float mapLogf(float value, float fromLow, float fromHigh, float toLow, float toH
     return logValue * (toHigh - toLow) + toLow;
 }
 
-float mapLogConstrainf(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
+inline float mapLogConstrainf(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
     return clip(mapLogf(value, fromLow, fromHigh, toLow, toHigh), toLow, toHigh);
 }
 
-float mapConstrainf_withCenter(float value, float fromLow, float fromCenter, float fromHigh, float toLow, float toHigh)
+inline float mapConstrainf_withCenter(float value, float fromLow, float fromCenter, float fromHigh, float toLow, float toHigh)
 {
     if (value == fromCenter)
         return (toLow + (toHigh - toLow) / 2.0f);
@@ -148,7 +148,7 @@ float mapConstrainf_withCenter(float value, float fromLow, float fromCenter, flo
  * @param deadzone_width The width of the deadzone around zero.
  * @return The mapped value within the range from -1 to +1.
  */
-float centerHysteris(float value, float deadzone_width)
+inline float centerHysteris(float value, float deadzone_width)
 {
     if (value > deadzone_width)
         return mapf(value, deadzone_width, 1, 0, 1);
@@ -168,17 +168,17 @@ T wrap(T value, T low, T high) {
     return value;
 }
 
-float wrapf(float value, float low, float high) {
+inline float wrapf(float value, float low, float high) {
     return wrap(value, low, high);
 }
 
-float normf(float value, float low, float high) {
+inline float normf(float value, float low, float high) {
     return clipf((value - low) / (high - low), 0, 1);
     // return (value - low) / (high - low);
 }
 
 
-float convert_zero_zone(float value, float zero_zone)
+inline float convert_zero_zone(float value, float zero_zone)
 {
     float sign = value > 0 ? 1 : -1;
 
